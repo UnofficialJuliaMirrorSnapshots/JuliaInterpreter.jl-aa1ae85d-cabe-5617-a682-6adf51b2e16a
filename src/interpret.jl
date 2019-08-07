@@ -1,7 +1,5 @@
 # Implements a simple interpreter for julia's lowered AST
 
-getlhs(pc) = SSAValue(pc)
-
 isassign(frame) = isassign(frame, frame.pc)
 isassign(frame, pc) = (pc in frame.framecode.used)
 
@@ -246,7 +244,7 @@ function evaluate_call_recurse!(@nospecialize(recurse), frame::Frame, call_expr:
     end
     isa(ret, BreakpointRef) && return ret
     frame.callee = nothing
-    recycle(newframe)
+    return_from(newframe)
     return ret
 end
 
@@ -352,7 +350,7 @@ function maybe_assign!(frame, @nospecialize(stmt), @nospecialize(val))
         lhs = stmt.args[1]
         do_assignment!(frame, lhs, val)
     elseif isassign(frame, pc)
-        lhs = getlhs(pc)
+        lhs = SSAValue(pc)
         do_assignment!(frame, lhs, val)
     end
     return nothing
@@ -494,7 +492,7 @@ function step_expr!(@nospecialize(recurse), frame, @nospecialize(node), istoplev
                         finish!(recurse, newframe, true)
                         frame.callee = nothing
                     end
-                    recycle(newframe)
+                    return_from(newframe)
                 elseif node.head == :global
                     # error("fixme")
                 elseif node.head == :toplevel
@@ -506,7 +504,7 @@ function step_expr!(@nospecialize(recurse), frame, @nospecialize(node), istoplev
                               while true
                                   ($through_methoddef_or_done!)($recurse, newframe) === nothing && break
                               end
-                              $recycle(newframe)
+                              $return_from(newframe)
                           end)))
                 elseif node.head == :error
                     error("unexpected error statement ", node)
@@ -538,7 +536,7 @@ function step_expr!(@nospecialize(recurse), frame, @nospecialize(node), istoplev
         if !@isdefined(rhs)
             @show frame node
         end
-        lhs = getlhs(pc)
+        lhs = SSAValue(pc)
         do_assignment!(frame, lhs, rhs)
     end
     return (frame.pc = pc + 1)
@@ -581,10 +579,8 @@ function handle_err(@nospecialize(recurse), frame, err)
         return BreakpointRef(frame.framecode, frame.pc, err)
     end
     if isempty(data.exception_frames)
-        is_root_frame = frame.caller === nothing
-        if !is_root_frame && !err_will_be_thrown_to_top_level
-            frame.caller.callee = nothing
-            recycle(frame)
+        if !err_will_be_thrown_to_top_level
+            return_from(frame)
         end
         # Check for world age errors, which generally indicate a failure to go back to toplevel
         if isa(err, MethodError)
