@@ -1,4 +1,4 @@
-using JuliaInterpreter, Test
+using JuliaInterpreter, Test, Random
 
 module JIVisible
 module JIInvisible
@@ -398,4 +398,45 @@ end
     frame = JuliaInterpreter.prepare_thunk(Toplevel, ex)
     JuliaInterpreter.finish!(frame, true)
     @test Toplevel.Node isa Type
+end
+
+
+@testset "Non-frames" begin
+    ex = Base.parse_input_line("""
+            \"\"\"
+            An expr that produces an `export nffoo` that doesn't produce a Frame
+            \"\"\"
+            module NonFrame
+            nfbar(x) = 1
+            @deprecate nffoo nfbar
+            global CoolStuff
+            end
+            """)
+    modexs, _ = JuliaInterpreter.split_expressions(Toplevel, ex)
+    for (mod, ex) in modexs
+        frame = JuliaInterpreter.prepare_thunk(mod, ex)
+        frame === nothing && continue
+        JuliaInterpreter.finish!(frame, true)
+    end
+    Core.eval(Toplevel, :(using .NonFrame))
+    @test isdefined(Toplevel, :nffoo)
+end
+
+@testset "LOAD_PATH and modules" begin
+    tmpdir = joinpath(tempdir(), randstring())
+    mkpath(tmpdir)
+    push!(LOAD_PATH, tmpdir)
+    filename = joinpath(tmpdir, "NewModule.jl")
+    open(filename, "w") do io
+        print(io, """
+        module NewModule
+        f() = 1
+        end""")
+    end
+    str = read(filename, String)
+    ex = Base.parse_input_line(str)
+    modexs, _ = JuliaInterpreter.split_expressions(Main, ex)
+    @test !isempty(modexs)
+    pop!(LOAD_PATH)
+    rm(tmpdir, recursive=true)
 end
