@@ -102,6 +102,24 @@ function hasarg(predicate, args)
     return false
 end
 
+function wrap_params(expr, sparams)
+    isempty(sparams) && return expr
+    params = []
+    for p in sparams
+        pname = isexpr(p, :(<:)) ? p.args[1] : p
+        hasarg(isequal(pname), expr.args) && push!(params, p)
+    end
+    return isempty(params) ? expr : Expr(:where, expr, params...)
+end
+
+function scopename(tn::TypeName)
+    modpath = Base.fullname(tn.module)
+    return Expr(:., _scopename(modpath...), QuoteNode(tn.name))
+end
+_scopename(sym) = sym
+_scopename(parent, child) = Expr(:., parent, QuoteNode(child))
+_scopename(parent, child, rest...) = Expr(:., parent, _scopename(child, rest...))
+
 ## Predicates
 
 is_goto_node(@nospecialize(node)) = isa(node, GotoNode) || isexpr(node, :gotoifnot)
@@ -238,7 +256,7 @@ getfile(frame::Frame, pc=frame.pc) = getfile(frame.framecode, pc)
 
 function codelocation(code::CodeInfo, idx)
     codeloc = code.codelocs[idx]
-    while codeloc == 0 && code.code[idx] === nothing && idx < length(code.code)
+    while codeloc == 0 && (code.code[idx] === nothing || isexpr(code.code[idx], :meta)) && idx < length(code.code)
         idx += 1
         codeloc = code.codelocs[idx]
     end

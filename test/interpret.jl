@@ -567,7 +567,7 @@ f(x) = x*x
 module CSVTest
     using Test
     using JuliaInterpreter
-    @static if sizeof(Int) == 8 # TableReader seems to not work on 32 bit
+    @static if sizeof(Int) == 8 && VERSION.minor < 4  # TableReader seems to not work on 32 bit or 1.4
         using TableReader
         const myfile = "smallcsv.csv"
         @test (@interpret readcsv(myfile)) == readcsv(myfile)
@@ -588,3 +588,23 @@ end
 
 # issue #330
 @test @interpret(Base.PipeEndpoint()) isa Base.PipeEndpoint
+
+# issue #345
+@noinline f_345() = 1
+frame = JuliaInterpreter.enter_call(f_345)
+@test JuliaInterpreter.whereis(frame) == (@__FILE__(), @__LINE__() - 2)
+
+# issue #285
+using LinearAlgebra, SparseArrays, Random
+@testset "issue 285" begin
+    function solveit(A,b)
+        return A\b .+ det(A)
+    end
+
+    Random.seed!(123456)
+    n = 5
+    A = sprand(n,n,0.5)
+    A = A'*A
+    b = rand(n)
+    @test @interpret(solveit(A, b)) == solveit(A, b)
+end
